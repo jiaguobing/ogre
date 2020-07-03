@@ -72,17 +72,8 @@ namespace Ogre {
 
         GLint mLargestSupportedAnisotropy;
 
-        /// Store last colour write state
-        bool mColourWrite[4];
-
         /// Store last depth write state
         bool mDepthWrite;
-
-        /// Store last scissor enable state
-        bool mScissorsEnabled;
-
-        /// Store scissor box
-        int mScissorBox[4];
 
         /// Store last stencil mask state
         uint32 mStencilWriteMask;
@@ -176,8 +167,6 @@ namespace Ogre {
 
         void _setViewport(Viewport *vp);
 
-        void _beginFrame(void);
-
         void _endFrame(void);
 
         void _setCullingMode(CullingMode mode);
@@ -192,7 +181,7 @@ namespace Ogre {
 
         void _setDepthBias(float constantBias, float slopeScaleBias);
 
-        void _setColourBufferWriteEnabled(bool red, bool green, bool blue, bool alpha);
+        void setColourBlendState(const ColourBlendState& state);
 
         void _setPolygonMode(PolygonMode level);
 
@@ -218,7 +207,7 @@ namespace Ogre {
                                        uint32* depthFormat,
                                        uint32* stencilFormat);
 
-        void setScissorTest(bool enabled, size_t left = 0, size_t top = 0, size_t right = 800, size_t bottom = 600);
+        void setScissorTest(bool enabled, const Rect& rect = Rect());
 
         void clearFrameBuffer(unsigned int buffers,
                               const ColourValue& colour = ColourValue::Black,
@@ -264,8 +253,6 @@ namespace Ogre {
         void unbindGpuProgram(GpuProgramType gptype);
         void bindGpuProgramParameters(GpuProgramType gptype, const GpuProgramParametersPtr& params, uint16 mask);
 
-        /// @copydoc RenderSystem::_setSeparateSceneBlending
-        void _setSeparateSceneBlending( SceneBlendFactor sourceFactor, SceneBlendFactor destFactor, SceneBlendFactor sourceFactorAlpha, SceneBlendFactor destFactorAlpha, SceneBlendOperation op, SceneBlendOperation alphaOp );
         /// @copydoc RenderSystem::_setAlphaRejectSettings
         void _setAlphaRejectSettings( CompareFunction func, unsigned char value, bool alphaToCoverage );
         /// @copydoc RenderSystem::getDisplayMonitorCount

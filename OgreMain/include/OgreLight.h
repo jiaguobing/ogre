@@ -407,18 +407,12 @@ namespace Ogre {
         
         /** Sets the maximum distance away from the camera that shadows
             by this light will be visible.
-        @remarks
+
             Shadow techniques can be expensive, therefore it is a good idea
             to limit them to being rendered close to the camera if possible,
             and to skip the expense of rendering shadows for distance objects.
-            This method allows you to set the distance at which shadows will no
-            longer be rendered.
-        @note
-            Each shadow technique can interpret this subtely differently.
-            For example, one technique may use this to eliminate casters,
-            another might use it to attenuate the shadows themselves.
-            You should tweak this value to suit your chosen shadow technique
-            and scene setup.
+            This method allows you to set the distance at which shadows casters
+            will be culled.
         */
         void setShadowFarDistance(Real distance);
         /** Tells the light to use the shadow far distance of the SceneManager
@@ -469,10 +463,14 @@ namespace Ogre {
         */
         Real getShadowFarClipDistance() const { return mShadowFarClipDist; }
 
-        /** Derive a shadow camera far distance from either the light, or
-            from the main camera if the light doesn't have its own setting.
+        /** Derive a shadow camera far distance
         */
-        Real _deriveShadowFarClipDistance(const Camera* maincam) const;
+        Real _deriveShadowFarClipDistance() const;
+        /// @deprecated use _deriveShadowFarClipDistance()
+        OGRE_DEPRECATED Real _deriveShadowFarClipDistance(const Camera*) const
+        {
+            return _deriveShadowFarClipDistance();
+        }
 
         /// Set the camera which this light should be relative to, for camera-relative rendering
         void _setCameraRelative(Camera* cam);

@@ -34,7 +34,6 @@ THE SOFTWARE.
 
 #include "OgreRenderTarget.h"
 #include "OgreDepthBuffer.h"
-#include "OgreIteratorWrappers.h"
 #include "OgreHardwareOcclusionQuery.h"
 #include "OgreComponents.h"
 
@@ -567,9 +566,11 @@ namespace Ogre {
     void RenderSystem::_setTextureUnitFiltering(size_t unit, FilterOptions minFilter,
             FilterOptions magFilter, FilterOptions mipFilter)
     {
+        OGRE_IGNORE_DEPRECATED_BEGIN
         _setTextureUnitFiltering(unit, FT_MIN, minFilter);
         _setTextureUnitFiltering(unit, FT_MAG, magFilter);
         _setTextureUnitFiltering(unit, FT_MIP, mipFilter);
+        OGRE_IGNORE_DEPRECATED_END
     }
     //---------------------------------------------------------------------
     void RenderSystem::_cleanupDepthBuffers( bool bCleanManualBuffers )
@@ -595,6 +596,11 @@ namespace Ogre {
         }
 
         mDepthBufferPool.clear();
+    }
+    void RenderSystem::_beginFrame(void)
+    {
+        if (!mActiveViewport)
+            OGRE_EXCEPT(Exception::ERR_INVALID_STATE, "Cannot begin frame - no viewport selected.");
     }
     //-----------------------------------------------------------------------
     CullingMode RenderSystem::_getCullingMode(void) const
@@ -642,6 +648,12 @@ namespace Ogre {
         return mIsReverseDepthBufferEnabled;
     }
     //-----------------------------------------------------------------------
+    void RenderSystem::reinitialise()
+    {
+        shutdown();
+        _initialise();
+    }
+
     void RenderSystem::shutdown(void)
     {
         // Remove occlusion queries
@@ -718,8 +730,9 @@ namespace Ogre {
     //-----------------------------------------------------------------------
     void RenderSystem::convertColourValue(const ColourValue& colour, uint32* pDest)
     {
+        OGRE_IGNORE_DEPRECATED_BEGIN
         *pDest = VertexElement::convertColourValue(colour, getColourVertexElementType());
-
+        OGRE_IGNORE_DEPRECATED_END
     }
     //-----------------------------------------------------------------------
     void RenderSystem::_render(const RenderOperation& op)

@@ -19,6 +19,7 @@
 #include <OgreRenderQueue.h>
 #include <OgreFrameListener.h>
 #include <OgreRoot.h>
+#include <OgreTimer.h>
 
 namespace Ogre
 {
@@ -125,12 +126,17 @@ void ImGuiOverlay::ImGUIRenderable::createFontTexture()
 
     mFontTex->getBuffer()->blitFromMemory(PixelBox(Box(0, 0, width, height), PF_BYTE_RGBA, pixels));
 }
-void ImGuiOverlay::NewFrame(const FrameEvent& evt)
+void ImGuiOverlay::NewFrame()
 {
+    static auto lastTime = Root::getSingleton().getTimer()->getMilliseconds();
+    auto now = Root::getSingleton().getTimer()->getMilliseconds();
+
     ImGuiIO& io = ImGui::GetIO();
     io.DeltaTime = std::max<float>(
-        evt.timeSinceLastFrame,
+        float(now - lastTime)/1000,
         1e-4f); // see https://github.com/ocornut/imgui/commit/3c07ec6a6126fb6b98523a9685d1f0f78ca3c40c
+
+    lastTime = now;
 
     // Read keyboard modifiers inputs
     io.KeyAlt = false;
@@ -198,16 +204,11 @@ bool ImGuiOverlay::ImGUIRenderable::preRender(SceneManager* sm, RenderSystem* rs
             const ImDrawCmd* drawCmd = &draw_list->CmdBuffer[j];
 
             // Set scissoring
-            int scLeft = static_cast<int>(drawCmd->ClipRect.x); // Obtain bounds
-            int scTop = static_cast<int>(drawCmd->ClipRect.y);
-            int scRight = static_cast<int>(drawCmd->ClipRect.z);
-            int scBottom = static_cast<int>(drawCmd->ClipRect.w);
+            Rect scissor(drawCmd->ClipRect.x, drawCmd->ClipRect.y, drawCmd->ClipRect.z,
+                          drawCmd->ClipRect.w);
 
             // Clamp bounds to viewport dimensions
-            scLeft = Math::Clamp(scLeft, 0, vpWidth);
-            scRight = Math::Clamp(scRight, 0, vpWidth);
-            scTop = Math::Clamp(scTop, 0, vpHeight);
-            scBottom = Math::Clamp(scBottom, 0, vpHeight);
+            scissor = scissor.intersect(Rect(0, 0, vpWidth, vpHeight));
 
             if (drawCmd->TextureId)
             {
@@ -220,7 +221,7 @@ bool ImGuiOverlay::ImGUIRenderable::preRender(SceneManager* sm, RenderSystem* rs
                 }
             }
 
-            rsys->setScissorTest(true, scLeft, scTop, scRight, scBottom);
+            rsys->setScissorTest(true, scissor);
 
             // Render!
             mRenderOp.indexData->indexStart = startIdx;
@@ -258,8 +259,6 @@ ImGuiOverlay::ImGUIRenderable::ImGUIRenderable()
     // use identity projection and view matrices
     mUseIdentityProjection = true;
     mUseIdentityView = true;
-
-    mConvertToBGR = false;
 }
 //-----------------------------------------------------------------------------------
 void ImGuiOverlay::ImGUIRenderable::initialise(void)
@@ -287,10 +286,7 @@ void ImGuiOverlay::ImGUIRenderable::initialise(void)
     offset += VertexElement::getTypeSize(VET_FLOAT2);
     decl->addElement(0, offset, VET_FLOAT2, VES_TEXTURE_COORDINATES, 0);
     offset += VertexElement::getTypeSize(VET_FLOAT2);
-    decl->addElement(0, offset, VET_COLOUR, VES_DIFFUSE);
-
-    if (Root::getSingleton().getRenderSystem()->getName().find("Direct3D9") != String::npos)
-        mConvertToBGR = true;
+    decl->addElement(0, offset, VET_UBYTE4_NORM, VES_DIFFUSE);
 }
 //-----------------------------------------------------------------------------------
 ImGuiOverlay::ImGUIRenderable::~ImGUIRenderable()
@@ -314,16 +310,6 @@ void ImGuiOverlay::ImGUIRenderable::updateVertexData(const ImVector<ImDrawVert>&
     {
         mRenderOp.indexData->indexBuffer = HardwareBufferManager::getSingleton().createIndexBuffer(
             HardwareIndexBuffer::IT_16BIT, idxBuf.size(), HardwareBuffer::HBU_WRITE_ONLY);
-    }
-
-    if (mConvertToBGR)
-    {
-        // convert RGBA > BGRA
-        PixelBox src(1, vtxBuf.size(), 1, PF_A8B8G8R8, (char*)vtxBuf.Data + offsetof(ImDrawVert, col));
-        src.rowPitch = sizeof(ImDrawVert) / sizeof(ImU32);
-        PixelBox dst = src;
-        dst.format = PF_A8R8G8B8;
-        PixelUtil::bulkPixelConversion(src, dst);
     }
 
     // Copy all vertices

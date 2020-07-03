@@ -28,7 +28,6 @@ THE SOFTWARE.
 #include "OgreStableHeaders.h"
 
 #include "OgreSkeletonManager.h"
-#include "OgreIteratorWrappers.h"
 #include "OgreEdgeListBuilder.h"
 #include "OgreAnimation.h"
 #include "OgreAnimationState.h"
@@ -1114,11 +1113,6 @@ namespace Ogre {
     const String& Mesh::getSkeletonName(void) const
     {
         return mSkeletonName;
-    }
-    //---------------------------------------------------------------------
-    ushort Mesh::getNumLodLevels(void) const
-    {
-        return mNumLods;
     }
     //---------------------------------------------------------------------
     const MeshLodUsage& Mesh::getLodLevel(ushort index) const

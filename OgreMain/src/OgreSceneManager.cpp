@@ -58,7 +58,9 @@ mName(name),
 mLastRenderQueueInvocationCustom(false),
 mCameraInProgress(0),
 mCurrentViewport(0),
-mSkyRenderer(this),
+mSkyPlane(this),
+mSkyBox(this),
+mSkyDome(this),
 mFogMode(FOG_NONE),
 mFogColour(),
 mFogStart(0),
@@ -88,8 +90,6 @@ mCameraRelativeRendering(false),
 mLastLightHash(0),
 mGpuParamsDirty((uint16)GPV_ALL)
 {
-    mShadowCasterQueryListener.reset(new ShadowCasterSceneQueryListener(this));
-
     Root *root = Root::getSingletonPtr();
     if (root)
         _setDestinationRenderSystem(root->getRenderSystem());
@@ -102,7 +102,6 @@ mGpuParamsDirty((uint16)GPV_ALL)
 
     // create the auto param data source instance
     mAutoParamDataSource.reset(createAutoParamDataSource());
-
 }
 //-----------------------------------------------------------------------
 SceneManager::~SceneManager()
@@ -710,8 +709,6 @@ void SceneManager::clearScene(void)
     // Clear animations
     destroyAllAnimations();
 
-    mSkyRenderer.clear();
-
     // Clear render queue, empty completely
     if (mRenderQueue)
         mRenderQueue->clear(true);
@@ -1067,27 +1064,7 @@ const Pass* SceneManager::_setPass(const Pass* pass, bool evenIfSuppressed,
             // if that's the case, we have to bind when lights are iterated
             // in renderSingleObject
 
-            TexturePtr shadowTex;
-            if (shadowTexIndex < mShadowRenderer.mShadowTextures.size())
-            {
-                shadowTex = getShadowTexture(shadowTexIndex);
-                // Hook up projection frustum
-                Camera *cam = shadowTex->getBuffer()->getRenderTarget()->getViewport(0)->getCamera();
-                // Enable projective texturing if fixed-function, but also need to
-                // disable it explicitly for program pipeline.
-                pTex->setProjectiveTexturing(!pass->hasVertexProgram(), cam);
-                mAutoParamDataSource->setTextureProjector(cam, shadowTexUnitIndex);
-            }
-            else
-            {
-                // Use fallback 'null' shadow texture
-                // no projection since all uniform colour anyway
-                shadowTex = mShadowRenderer.mNullShadowTexture;
-                pTex->setProjectiveTexturing(false);
-                mAutoParamDataSource->setTextureProjector(0, shadowTexUnitIndex);
-            }
-            pTex->_setTexturePtr(shadowTex);
-
+            mShadowRenderer.resolveShadowTexture(pTex, shadowTexIndex, shadowTexUnitIndex);
             ++shadowTexIndex;
             ++shadowTexUnitIndex;
         }
@@ -1095,8 +1072,7 @@ const Pass* SceneManager::_setPass(const Pass* pass, bool evenIfSuppressed,
         {
             // Manually set texture projector for shaders if present
             // This won't get set any other way if using manual projection
-            TextureUnitState::EffectMap::const_iterator effi =
-                pTex->getEffects().find(TextureUnitState::ET_PROJECTIVE_TEXTURE);
+            auto effi = pTex->getEffects().find(TextureUnitState::ET_PROJECTIVE_TEXTURE);
             if (effi != pTex->getEffects().end())
             {
                 mAutoParamDataSource->setTextureProjector(effi->second.frustum, unit);
@@ -1137,9 +1113,8 @@ const Pass* SceneManager::_setPass(const Pass* pass, bool evenIfSuppressed,
 
     // Set up non-texture related material settings
     // Depth buffer settings
-    mDestRenderSystem->_setDepthBufferFunction(pass->getDepthFunction());
-    mDestRenderSystem->_setDepthBufferCheckEnabled(pass->getDepthCheckEnabled());
-    mDestRenderSystem->_setDepthBufferWriteEnabled(pass->getDepthWriteEnabled());
+    mDestRenderSystem->_setDepthBufferParams(pass->getDepthCheckEnabled(), pass->getDepthWriteEnabled(),
+                                             pass->getDepthFunction());
     mDestRenderSystem->_setDepthBias(pass->getDepthBiasConstant(), pass->getDepthBiasSlopeScale());
     // Alpha-reject settings
     mDestRenderSystem->_setAlphaRejectSettings(pass->getAlphaRejectFunction(),
@@ -1216,7 +1191,7 @@ void SceneManager::prepareRenderQueue(void)
 
             // Default all the queue groups that are there, new ones will be created
             // with defaults too
-            for (size_t i = 0; i < RENDER_QUEUE_MAX; ++i)
+            for (size_t i = 0; i < RENDER_QUEUE_COUNT; ++i)
             {
                 if(!q->_getQueueGroups()[i])
                     continue;
@@ -1305,7 +1280,9 @@ void SceneManager::_renderScene(Camera* camera, Viewport* vp, bool includeOverla
             }
 #ifdef OGRE_NODELESS_POSITIONING
             // Auto-track camera if required
+            OGRE_IGNORE_DEPRECATED_BEGIN
             camera->_autoTrack();
+            OGRE_IGNORE_DEPRECATED_END
 #endif
         }
 
@@ -1395,11 +1372,6 @@ void SceneManager::_renderScene(Camera* camera, Viewport* vp, bool includeOverla
             firePostFindVisibleObjects(vp);
 
             mAutoParamDataSource->setMainCamBoundsInfo(&(camVisObjIt->second));
-        }
-        // Queue skies, if viewport seems it
-        if (vp->getSkiesEnabled() && mFindVisibleObjects && mIlluminationStage != IRS_RENDER_TO_TEXTURE)
-        {
-            mSkyRenderer.queueSkiesForRendering(getRenderQueue(), camera);
         }
     } // end lock on scene graph mutex
 
@@ -1561,17 +1533,16 @@ void SceneManager::setSkyPlane(
                                int xsegments, int ysegments,
                                const String& groupName)
 {
-    mSkyRenderer.setSkyPlane(
-        enable, plane, materialName, gscale, tiling,
-        static_cast<uint8>(drawFirst ? RENDER_QUEUE_SKIES_EARLY : RENDER_QUEUE_SKIES_LATE), bow,
-        xsegments, ysegments, groupName);
+    _setSkyPlane(enable, plane, materialName, gscale, tiling,
+                 drawFirst ? RENDER_QUEUE_SKIES_EARLY : RENDER_QUEUE_SKIES_LATE, bow, xsegments, ysegments,
+                 groupName);
 }
 
 void SceneManager::_setSkyPlane(bool enable, const Plane& plane, const String& materialName,
                                 Real gscale, Real tiling, uint8 renderQueue, Real bow,
                                 int xsegments, int ysegments, const String& groupName)
 {
-    mSkyRenderer.setSkyPlane(enable, plane, materialName, gscale, tiling, renderQueue, bow,
+    mSkyPlane.setSkyPlane(enable, plane, materialName, gscale, tiling, renderQueue, bow,
                              xsegments, ysegments, groupName);
 }
 
@@ -1584,16 +1555,15 @@ void SceneManager::setSkyBox(
                              const Quaternion& orientation,
                              const String& groupName)
 {
-    mSkyRenderer.setSkyBox(enable, materialName, distance,
-        static_cast<uint8>(drawFirst?RENDER_QUEUE_SKIES_EARLY: RENDER_QUEUE_SKIES_LATE), 
-        orientation, groupName);
+    _setSkyBox(enable, materialName, distance,
+               drawFirst ? RENDER_QUEUE_SKIES_EARLY : RENDER_QUEUE_SKIES_LATE, orientation, groupName);
 }
 
 void SceneManager::_setSkyBox(bool enable, const String& materialName, Real distance,
                               uint8 renderQueue, const Quaternion& orientation,
                               const String& groupName)
 {
-    mSkyRenderer.setSkyBox(enable, materialName, distance, renderQueue, orientation, groupName);
+    mSkyBox.setSkyBox(enable, materialName, distance, renderQueue, orientation, groupName);
 }
 
 //-----------------------------------------------------------------------
@@ -1608,9 +1578,9 @@ void SceneManager::setSkyDome(
                               int xsegments, int ysegments, int ySegmentsToKeep,
                               const String& groupName)
 {
-    mSkyRenderer.setSkyDome(enable, materialName, curvature, tiling, distance,
-        static_cast<uint8>(drawFirst?RENDER_QUEUE_SKIES_EARLY: RENDER_QUEUE_SKIES_LATE), 
-        orientation, xsegments, ysegments, ySegmentsToKeep, groupName);
+    _setSkyDome(enable, materialName, curvature, tiling, distance,
+                drawFirst ? RENDER_QUEUE_SKIES_EARLY : RENDER_QUEUE_SKIES_LATE, orientation, xsegments,
+                ysegments, ySegmentsToKeep, groupName);
 }
 
 void SceneManager::_setSkyDome(bool enable, const String& materialName, Real curvature, Real tiling,
@@ -1618,7 +1588,7 @@ void SceneManager::_setSkyDome(bool enable, const String& materialName, Real cur
                                int xsegments, int ysegments, int ysegments_keep,
                                const String& groupName)
 {
-    mSkyRenderer.setSkyDome(enable, materialName, curvature, tiling, distance, renderQueue,
+    mSkyDome.setSkyDome(enable, materialName, curvature, tiling, distance, renderQueue,
                             orientation, xsegments, ysegments, ysegments_keep, groupName);
 }
 
@@ -1719,7 +1689,7 @@ void SceneManager::renderVisibleObjectsDefaultSequence(void)
     // Render each separate queue
     const RenderQueue::RenderQueueGroupMap& groups = getRenderQueue()->_getQueueGroups();
 
-    for (uint8 qId = 0; qId < RENDER_QUEUE_MAX; ++qId)
+    for (uint8 qId = 0; qId < RENDER_QUEUE_COUNT; ++qId)
     {
         if(!groups[qId])
             continue;
@@ -3057,141 +3027,6 @@ void SceneManager::findLightsAffectingFrustum(const Camera* camera)
     }
 
 }
-//---------------------------------------------------------------------
-bool SceneManager::ShadowCasterSceneQueryListener::queryResult(
-    MovableObject* object)
-{
-    if (object->getCastShadows() && object->isVisible() && 
-        mSceneMgr->isRenderQueueToBeProcessed(object->getRenderQueueGroup()) &&
-        // objects need an edge list to cast shadows (shadow volumes only)
-        ((mSceneMgr->getShadowTechnique() & SHADOWDETAILTYPE_TEXTURE) ||
-        ((mSceneMgr->getShadowTechnique() & SHADOWDETAILTYPE_STENCIL) && object->hasEdgeList())
-        )
-       )
-    {
-        if (mFarDistSquared)
-        {
-            // Check object is within the shadow far distance
-            Vector3 toObj = object->getParentNode()->_getDerivedPosition() 
-                - mCamera->getDerivedPosition();
-            Real radius = object->getWorldBoundingSphere().getRadius();
-            Real dist =  toObj.squaredLength();               
-            if (dist - (radius * radius) > mFarDistSquared)
-            {
-                // skip, beyond max range
-                return true;
-            }
-        }
-
-        // If the object is in the frustum, we can always see the shadow
-        if (mCamera->isVisible(object->getWorldBoundingBox()))
-        {
-            mCasterList->push_back(object);
-            return true;
-        }
-
-        // Otherwise, object can only be casting a shadow into our view if
-        // the light is outside the frustum (or it's a directional light, 
-        // which are always outside), and the object is intersecting
-        // on of the volumes formed between the edges of the frustum and the
-        // light
-        if (!mIsLightInFrustum || mLight->getType() == Light::LT_DIRECTIONAL)
-        {
-            // Iterate over volumes
-            PlaneBoundedVolumeList::const_iterator i, iend;
-            iend = mLightClipVolumeList->end();
-            for (i = mLightClipVolumeList->begin(); i != iend; ++i)
-            {
-                if (i->intersects(object->getWorldBoundingBox()))
-                {
-                    mCasterList->push_back(object);
-                    return true;
-                }
-
-            }
-
-        }
-    }
-    return true;
-}
-//---------------------------------------------------------------------
-bool SceneManager::ShadowCasterSceneQueryListener::queryResult(
-    SceneQuery::WorldFragment* fragment)
-{
-    // don't deal with world geometry
-    return true;
-}
-//---------------------------------------------------------------------
-const SceneManager::ShadowCasterList& SceneManager::findShadowCastersForLight(
-    const Light* light, const Camera* camera)
-{
-    mShadowCasterList.clear();
-
-    if (light->getType() == Light::LT_DIRECTIONAL)
-    {
-        // Basic AABB query encompassing the frustum and the extrusion of it
-        AxisAlignedBox aabb;
-        const Vector3* corners = camera->getWorldSpaceCorners();
-        Vector3 min, max;
-        Vector3 extrude = light->getDerivedDirection() * -mShadowRenderer.mShadowDirLightExtrudeDist;
-        // do first corner
-        min = max = corners[0];
-        min.makeFloor(corners[0] + extrude);
-        max.makeCeil(corners[0] + extrude);
-        for (size_t c = 1; c < 8; ++c)
-        {
-            min.makeFloor(corners[c]);
-            max.makeCeil(corners[c]);
-            min.makeFloor(corners[c] + extrude);
-            max.makeCeil(corners[c] + extrude);
-        }
-        aabb.setExtents(min, max);
-
-        if (!mShadowCasterAABBQuery)
-            mShadowCasterAABBQuery.reset(createAABBQuery(aabb));
-        else
-            mShadowCasterAABBQuery->setBox(aabb);
-        // Execute, use callback
-        mShadowCasterQueryListener->prepare(false, 
-            &(light->_getFrustumClipVolumes(camera)), 
-            light, camera, &mShadowCasterList, light->getShadowFarDistanceSquared());
-        mShadowCasterAABBQuery->execute(mShadowCasterQueryListener.get());
-
-
-    }
-    else
-    {
-        Sphere s(light->getDerivedPosition(), light->getAttenuationRange());
-        // eliminate early if camera cannot see light sphere
-        if (camera->isVisible(s))
-        {
-            if (!mShadowCasterSphereQuery)
-                mShadowCasterSphereQuery.reset(createSphereQuery(s));
-            else
-                mShadowCasterSphereQuery->setSphere(s);
-
-            // Determine if light is inside or outside the frustum
-            bool lightInFrustum = camera->isVisible(light->getDerivedPosition());
-            const PlaneBoundedVolumeList* volList = 0;
-            if (!lightInFrustum)
-            {
-                // Only worth building an external volume list if
-                // light is outside the frustum
-                volList = &(light->_getFrustumClipVolumes(camera));
-            }
-
-            // Execute, use callback
-            mShadowCasterQueryListener->prepare(lightInFrustum, 
-                volList, light, camera, &mShadowCasterList, light->getShadowFarDistanceSquared());
-            mShadowCasterSphereQuery->execute(mShadowCasterQueryListener.get());
-
-        }
-
-    }
-
-
-    return mShadowCasterList;
-}
 void SceneManager::initShadowVolumeMaterials()
 {
     mShadowRenderer.initShadowVolumeMaterials();
@@ -3254,16 +3089,13 @@ ClipResult SceneManager::buildAndSetScissor(const LightList& ll, const Camera* c
         finalRect.bottom > -1.0f || finalRect.top < 1.0f)
     {
         // Turn normalised device coordinates into pixels
-        int iLeft, iTop, iWidth, iHeight;
-        mCurrentViewport->getActualDimensions(iLeft, iTop, iWidth, iHeight);
-        size_t szLeft, szRight, szTop, szBottom;
+        Rect vp = mCurrentViewport->getActualDimensions();
 
-        szLeft = (size_t)(iLeft + ((finalRect.left + 1) * 0.5 * iWidth));
-        szRight = (size_t)(iLeft + ((finalRect.right + 1) * 0.5 * iWidth));
-        szTop = (size_t)(iTop + ((-finalRect.top + 1) * 0.5 * iHeight));
-        szBottom = (size_t)(iTop + ((-finalRect.bottom + 1) * 0.5 * iHeight));
-
-        mDestRenderSystem->setScissorTest(true, szLeft, szTop, szRight, szBottom);
+        Rect scissor(vp.left + ((finalRect.left + 1) * 0.5 * vp.width()),
+                     vp.top + ((-finalRect.top + 1) * 0.5 * vp.height()),
+                     vp.left + ((finalRect.right + 1) * 0.5 * vp.width()),
+                     vp.top + ((-finalRect.bottom + 1) * 0.5 * vp.height()));
+        mDestRenderSystem->setScissorTest(true, scissor);
 
         return CLIPPED_SOME;
     }

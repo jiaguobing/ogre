@@ -24,6 +24,8 @@ if(UNIX)
       COMPILE_DEFINITIONS "register="
     )
   endforeach()
+  set_source_files_properties(src/atifs/src/Compiler2Pass.cpp
+      PROPERTIES COMPILE_FLAGS -Wno-implicit-fallthrough)
 endif()
 
 # Remove test app file
@@ -66,12 +68,7 @@ target_include_directories(RenderSystem_GL PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     $<INSTALL_INTERFACE:include/OGRE/RenderSystems/GL>)
 
-if (APPLE)
-    set_target_properties(RenderSystem_GL PROPERTIES
-        LINK_FLAGS "-framework Cocoa -framework Carbon -framework OpenGL -framework AGL")
-else()
-    target_include_directories(RenderSystem_GL PUBLIC ${OPENGL_INCLUDE_DIR})
-endif ()
+target_include_directories(RenderSystem_GL PUBLIC ${OPENGL_INCLUDE_DIR})
 
 ogre_config_framework(RenderSystem_GL)
 

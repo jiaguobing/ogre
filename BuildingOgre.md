@@ -90,6 +90,7 @@ a list of build options. You can adjust the settings to your liking;
 particular component/ plugin from being built
 - `OGRE_CONFIG_XXX` on the other hand allows you to configure Core features e.g. threading or zip file support.
 - `OGRE_CONFIG_NODE_INHERIT_TRANSFORM` enables shearing and non-uniform scaling for Ogre::SceneNode. This requires slightly more storage and computation time.
+- `OGRE_CONFIG_ENABLE_MESHLOD` If enabled, LOD levels from *.mesh files are used to reduce triangle count. If disabled, they are skipped at loading. Reducing submesh size and entity size.
 - `OGRE_PROFILING` add profiling instrumentation the ogre library.
 - `OGRE_PROFILING_REMOTERY_PATH` if set, Remotery is used for profiling instead of the Ogre internal profiler.
 - `OGRE_ASSERT_MODE` allows you to to disable all runtime assertion exceptions or turn them into calls to `std::abort`.
@@ -174,7 +175,7 @@ Building on Mac OS X for iOS OS
 
 To build Ogre for iOS, you need to specify the ios cross toolchain to cmake as
 
-    cmake -DCMAKE_TOOLCHAIN_FILE=CMake/toolchain/ios.toolchain.xcode.cmake -G Xcode .
+    cmake -DCMAKE_TOOLCHAIN_FILE=CMake/toolchain/ios.toolchain.xcode.cmake -DIOS_PLATFORM=SIMULATOR -G Xcode .
 
 
 Unfortunately, you will now have to do a few manual steps to
@@ -245,3 +246,15 @@ file .vmx and add the parameter: hypervisor.cpuid.v0 = "FALSE"
 All versions of Visual Studio 2012 have a window refresh issue when running
 in VMware and the window is maximized, the solution is just to change the
 size of the Visual Studio window to be less the the screen width and height.
+
+Installing and building via vcpkg
+---------------------------------
+You can download and install ogre using the [vcpkg](https://github.com/Microsoft/vcpkg) dependency manager:
+```
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh
+./vcpkg integrate install
+vcpkg install ogre
+```
+The ogre port in vcpkg is kept up to date by Microsoft team members and community contributors. If the version is out of date, please [create an issue or pull request](https://github.com/Microsoft/vcpkg) on the vcpkg repository.

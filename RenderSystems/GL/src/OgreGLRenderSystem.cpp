@@ -157,7 +157,6 @@ namespace Ogre {
         mFixedFunctionTextureUnits(0),
         mStencilWriteMask(0xFFFFFFFF),
         mDepthWrite(true),
-        mScissorsEnabled(false),
         mUseAutoTextureMatrix(false),
         mHardwareBufferManager(0),
         mGpuProgramManager(0),
@@ -180,8 +179,6 @@ namespace Ogre {
         mViewMatrix = Matrix4::IDENTITY;
 
         initConfigOptions();
-
-        mColourWrite[0] = mColourWrite[1] = mColourWrite[2] = mColourWrite[3] = true;
 
         for (i = 0; i < OGRE_MAX_TEXTURE_LAYERS; i++)
         {
@@ -669,6 +666,9 @@ namespace Ogre {
         rsc->setCapability(RSC_TEXTURE_1D);
         rsc->setCapability(RSC_TEXTURE_3D);
 
+        if(GLEW_VERSION_3_0 || GLEW_EXT_texture_array)
+            rsc->setCapability(RSC_TEXTURE_2D_ARRAY);
+
         // Check for framebuffer object extension
         if(GLEW_EXT_framebuffer_object)
         {
@@ -971,13 +971,6 @@ namespace Ogre {
 
             // Downgrade number of simultaneous targets
             caps->setNumMultiRenderTargets(1);
-        }
-
-
-        Log* defaultLog = LogManager::getSingleton().getDefaultLog();
-        if (defaultLog)
-        {
-            caps->log(defaultLog);
         }
 
         mGLInitialised = true;
@@ -1805,70 +1798,6 @@ namespace Ogre {
         return GL_ONE;
     }
     //-----------------------------------------------------------------------------
-    void GLRenderSystem::_setSeparateSceneBlending(
-        SceneBlendFactor sourceFactor, SceneBlendFactor destFactor,
-        SceneBlendFactor sourceFactorAlpha, SceneBlendFactor destFactorAlpha,
-        SceneBlendOperation op, SceneBlendOperation alphaOp )
-    {
-        GLint sourceBlend = getBlendMode(sourceFactor);
-        GLint destBlend = getBlendMode(destFactor);
-        GLint sourceBlendAlpha = getBlendMode(sourceFactorAlpha);
-        GLint destBlendAlpha = getBlendMode(destFactorAlpha);
-
-        if(sourceFactor == SBF_ONE && destFactor == SBF_ZERO &&
-           sourceFactorAlpha == SBF_ONE && destFactorAlpha == SBF_ZERO)
-        {
-            mStateCacheManager->setEnabled(GL_BLEND, false);
-        }
-        else
-        {
-            mStateCacheManager->setEnabled(GL_BLEND, true);
-            mStateCacheManager->setBlendFunc(sourceBlend, destBlend, sourceBlendAlpha, destBlendAlpha);
-        }
-
-        GLint func = GL_FUNC_ADD, alphaFunc = GL_FUNC_ADD;
-
-        switch(op)
-        {
-        case SBO_ADD:
-            func = GL_FUNC_ADD;
-            break;
-        case SBO_SUBTRACT:
-            func = GL_FUNC_SUBTRACT;
-            break;
-        case SBO_REVERSE_SUBTRACT:
-            func = GL_FUNC_REVERSE_SUBTRACT;
-            break;
-        case SBO_MIN:
-            func = GL_MIN;
-            break;
-        case SBO_MAX:
-            func = GL_MAX;
-            break;
-        }
-
-        switch(alphaOp)
-        {
-        case SBO_ADD:
-            alphaFunc = GL_FUNC_ADD;
-            break;
-        case SBO_SUBTRACT:
-            alphaFunc = GL_FUNC_SUBTRACT;
-            break;
-        case SBO_REVERSE_SUBTRACT:
-            alphaFunc = GL_FUNC_REVERSE_SUBTRACT;
-            break;
-        case SBO_MIN:
-            alphaFunc = GL_MIN;
-            break;
-        case SBO_MAX:
-            alphaFunc = GL_MAX;
-            break;
-        }
-
-        mStateCacheManager->setBlendEquation(func, alphaFunc);
-    }
-    //-----------------------------------------------------------------------------
     void GLRenderSystem::_setAlphaRejectSettings(CompareFunction func, unsigned char value, bool alphaToCoverage)
     {
         bool enable = func != CMPF_ALWAYS_PASS;
@@ -1902,50 +1831,24 @@ namespace Ogre {
             _setRenderTarget(target);
             mActiveViewport = vp;
 
-            GLsizei x, y, w, h;
-
             // Calculate the "lower-left" corner of the viewport
-            w = vp->getActualWidth();
-            h = vp->getActualHeight();
-            x = vp->getActualLeft();
-            y = vp->getActualTop();
+            Rect vpRect = vp->getActualDimensions();
             if (!target->requiresTextureFlipping())
             {
                 // Convert "upper-left" corner to "lower-left"
-                y = target->getHeight() - h - y;
+                std::swap(vpRect.top, vpRect.bottom);
+                vpRect.top = target->getHeight() - vpRect.top;
+                vpRect.bottom = target->getHeight() - vpRect.bottom;
             }
-            mStateCacheManager->setViewport(x, y, w, h);
-
-            // Configure the viewport clipping
-            glScissor(x, y, w, h);
-            mScissorBox[0] = x;
-            mScissorBox[1] = y;
-            mScissorBox[2] = w;
-            mScissorBox[3] = h;
+            mStateCacheManager->setViewport(vpRect);
 
             vp->_clearUpdatedFlag();
         }
     }
 
     //-----------------------------------------------------------------------------
-    void GLRenderSystem::_beginFrame(void)
-    {
-        if (!mActiveViewport)
-            OGRE_EXCEPT(Exception::ERR_INVALID_STATE,
-                        "Cannot begin frame - no viewport selected.",
-                        "GLRenderSystem::_beginFrame");
-
-        // Activate the viewport clipping
-        mScissorsEnabled = true;
-        mStateCacheManager->setEnabled(GL_SCISSOR_TEST, true);
-    }
-
-    //-----------------------------------------------------------------------------
     void GLRenderSystem::_endFrame(void)
     {
-        // Deactivate the viewport clipping.
-        mScissorsEnabled = false;
-        mStateCacheManager->setEnabled(GL_SCISSOR_TEST, false);
         // unbind GPU programs at end of frame
         // this is mostly to avoid holding bound programs that might get deleted
         // outside via the resource manager
@@ -2043,14 +1946,42 @@ namespace Ogre {
         }
     }
     //-----------------------------------------------------------------------------
-    void GLRenderSystem::_setColourBufferWriteEnabled(bool red, bool green, bool blue, bool alpha)
+    static GLenum getBlendOp(SceneBlendOperation op)
     {
-        mStateCacheManager->setColourMask(red, green, blue, alpha);
+        switch (op)
+        {
+        case SBO_ADD:
+            return GL_FUNC_ADD;
+        case SBO_SUBTRACT:
+            return GL_FUNC_SUBTRACT;
+        case SBO_REVERSE_SUBTRACT:
+            return GL_FUNC_REVERSE_SUBTRACT;
+        case SBO_MIN:
+            return GL_MIN;
+        case SBO_MAX:
+            return GL_MAX;
+        }
+        return GL_FUNC_ADD;
+    }
+    void GLRenderSystem::setColourBlendState(const ColourBlendState& state)
+    {
         // record this
-        mColourWrite[0] = red;
-        mColourWrite[1] = green;
-        mColourWrite[2] = blue;
-        mColourWrite[3] = alpha;
+        mCurrentBlend = state;
+
+        if (state.blendingEnabled())
+        {
+            mStateCacheManager->setEnabled(GL_BLEND, true);
+            mStateCacheManager->setBlendFunc(
+                getBlendMode(state.sourceFactor), getBlendMode(state.destFactor),
+                getBlendMode(state.sourceFactorAlpha), getBlendMode(state.destFactorAlpha));
+        }
+        else
+        {
+            mStateCacheManager->setEnabled(GL_BLEND, false);
+        }
+
+        mStateCacheManager->setBlendEquation(getBlendOp(state.operation), getBlendOp(state.alphaOperation));
+        mStateCacheManager->setColourMask(state.writeR, state.writeG, state.writeB, state.writeA);
     }
     //-----------------------------------------------------------------------------
     void GLRenderSystem::setLightingEnabled(bool enabled)
@@ -2864,57 +2795,27 @@ namespace Ogre {
         glPopMatrix();
     }
     //---------------------------------------------------------------------
-    void GLRenderSystem::setScissorTest(bool enabled, size_t left,
-                                        size_t top, size_t right, size_t bottom)
+    void GLRenderSystem::setScissorTest(bool enabled, const Rect& rect)
     {
-        mScissorsEnabled = enabled;
+        mStateCacheManager->setEnabled(GL_SCISSOR_TEST, enabled);
+
+        if (!enabled)
+            return;
+
         // If request texture flipping, use "upper-left", otherwise use "lower-left"
         bool flipping = mActiveRenderTarget->requiresTextureFlipping();
         //  GL measures from the bottom, not the top
-        size_t targetHeight = mActiveRenderTarget->getHeight();
-        // Calculate the "lower-left" corner of the viewport
-        GLsizei x = 0, y = 0, w = 0, h = 0;
-
-        if (enabled)
-        {
-            mStateCacheManager->setEnabled(GL_SCISSOR_TEST, true);
-            // NB GL uses width / height rather than right / bottom
-            x = left;
-            if (flipping)
-                y = top;
-            else
-                y = targetHeight - bottom;
-            w = right - left;
-            h = bottom - top;
-            glScissor(x, y, w, h);
-            mScissorBox[0] = x;
-            mScissorBox[1] = y;
-            mScissorBox[2] = w;
-            mScissorBox[3] = h;
-        }
-        else
-        {
-            // GL requires you to reset the scissor when disabling
-            w = mActiveViewport->getActualWidth();
-            h = mActiveViewport->getActualHeight();
-            x = mActiveViewport->getActualLeft();
-            if (flipping)
-                y = mActiveViewport->getActualTop();
-            else
-                y = targetHeight - mActiveViewport->getActualTop() - h;
-            glScissor(x, y, w, h);
-            mScissorBox[0] = x;
-            mScissorBox[1] = y;
-            mScissorBox[2] = w;
-            mScissorBox[3] = h;
-        }
+        long targetHeight = mActiveRenderTarget->getHeight();
+        long top = flipping ? rect.top : targetHeight - rect.bottom;
+        // NB GL uses width / height rather than right / bottom
+        glScissor(rect.left, top, rect.width(), rect.height());
     }
     //---------------------------------------------------------------------
     void GLRenderSystem::clearFrameBuffer(unsigned int buffers,
                                           const ColourValue& colour, Real depth, unsigned short stencil)
     {
-        bool colourMask = !mColourWrite[0] || !mColourWrite[1]
-            || !mColourWrite[2] || !mColourWrite[3];
+        bool colourMask =
+            !(mCurrentBlend.writeR && mCurrentBlend.writeG && mCurrentBlend.writeB && mCurrentBlend.writeA);
 
         if(mCurrentContext)
 			mCurrentContext->setCurrent();
@@ -2949,37 +2850,23 @@ namespace Ogre {
             glClearStencil(stencil);
         }
 
-        // Should be enable scissor test due the clear region is
-        // relied on scissor box bounds.
-        if (!mScissorsEnabled)
+        Rect vpRect = mActiveViewport->getActualDimensions();
+        bool needScissorBox =
+            vpRect != Rect(0, 0, mActiveRenderTarget->getWidth(), mActiveRenderTarget->getHeight());
+        if (needScissorBox)
         {
-            mStateCacheManager->setEnabled(GL_SCISSOR_TEST, true);
-        }
-
-        // Sets the scissor box as same as viewport
-        GLint viewport[4];
-        mStateCacheManager->getViewport(viewport);
-        bool scissorBoxDifference =
-            viewport[0] != mScissorBox[0] || viewport[1] != mScissorBox[1] ||
-            viewport[2] != mScissorBox[2] || viewport[3] != mScissorBox[3];
-        if (scissorBoxDifference)
-        {
-            glScissor(viewport[0], viewport[1], viewport[2], viewport[3]);
+            // Should be enable scissor test due the clear region is
+            // relied on scissor box bounds.
+            setScissorTest(true, vpRect);
         }
 
         // Clear buffers
         glClear(flags);
 
-        // Restore scissor box
-        if (scissorBoxDifference)
-        {
-            glScissor(mScissorBox[0], mScissorBox[1], mScissorBox[2], mScissorBox[3]);
-        }
-
         // Restore scissor test
-        if (!mScissorsEnabled)
+        if (needScissorBox)
         {
-           mStateCacheManager->setEnabled(GL_SCISSOR_TEST, false);
+            setScissorTest(false);
         }
 
         // Reset buffer write state
@@ -2989,7 +2876,8 @@ namespace Ogre {
         }
         if (colourMask && (buffers & FBT_COLOUR))
         {
-            mStateCacheManager->setColourMask(mColourWrite[0], mColourWrite[1], mColourWrite[2], mColourWrite[3]);
+            mStateCacheManager->setColourMask(mCurrentBlend.writeR, mCurrentBlend.writeG,
+                                              mCurrentBlend.writeB, mCurrentBlend.writeA);
         }
         if (buffers & FBT_STENCIL)
         {
@@ -3088,7 +2976,8 @@ namespace Ogre {
         // clearFrameBuffer would be wrong because the value we are recorded may be
         // difference with the really state stored in GL context.
         mStateCacheManager->setDepthMask(mDepthWrite);
-        mStateCacheManager->setColourMask(mColourWrite[0], mColourWrite[1], mColourWrite[2], mColourWrite[3]);
+        mStateCacheManager->setColourMask(mCurrentBlend.writeR, mCurrentBlend.writeG,
+                                          mCurrentBlend.writeB, mCurrentBlend.writeA);
         mStateCacheManager->setStencilMask(mStencilWriteMask);
 
     }

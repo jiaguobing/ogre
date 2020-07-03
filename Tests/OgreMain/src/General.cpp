@@ -210,10 +210,10 @@ TEST(MaterialSerializer, Basic)
     ASSERT_TRUE(mat2);
     EXPECT_EQ(mat2->getTechniques().size(), mat->getTechniques().size());
     EXPECT_EQ(mat2->getTechniques()[0]->getPasses()[0]->getAmbient(), ColourValue::Green);
+    EXPECT_EQ(mat2->getTechniques()[0]->getPasses()[0]->getTextureUnitState(0)->getName(),
+              "Test TUS");
     EXPECT_EQ(mat2->getTechniques()[0]->getPasses()[0]->getTextureUnitState("Test TUS")->getContentType(),
               TextureUnitState::CONTENT_SHADOW);
-    EXPECT_EQ(mat2->getTechniques()[0]->getPasses()[0]->getTextureUnitState("Test TUS")->getTextureNameAlias(),
-              "Test TUS");
     EXPECT_EQ(mat2->getTechniques()[0]->getPasses()[0]->getTextureUnitState(1)->getTextureName(),
               "TextureName");
 }
@@ -268,8 +268,6 @@ TEST(Image, Combine)
 
 struct UsePreviousResourceLoadingListener : public ResourceLoadingListener
 {
-    DataStreamPtr resourceLoading(const String &name, const String &group, Resource *resource) { return DataStreamPtr(); }
-    void resourceStreamOpened(const String &name, const String &group, Resource *resource, DataStreamPtr& dataStream) {}
     bool resourceCollision(Resource *resource, ResourceManager *resourceManager) { return false; }
 };
 
@@ -303,8 +301,6 @@ TEST_F(ResourceLoading, CollsionUseExisting)
 
 struct DeletePreviousResourceLoadingListener : public ResourceLoadingListener
 {
-    DataStreamPtr resourceLoading(const String &name, const String &group, Resource *resource) { return DataStreamPtr(); }
-    void resourceStreamOpened(const String &name, const String &group, Resource *resource, DataStreamPtr& dataStream) {}
     bool resourceCollision(Resource* resource, ResourceManager* resourceManager)
     {
         resourceManager->remove(resource->getName(), resource->getGroup());
@@ -336,7 +332,6 @@ TEST_F(TextureTests, Blank)
     EXPECT_EQ(tus->getNumMipmaps(), MIP_DEFAULT);
     EXPECT_EQ(tus->getDesiredFormat(), PF_UNKNOWN);
     EXPECT_EQ(tus->getFrameTextureName(0), "");
-    EXPECT_EQ(tus->getIsAlpha(), false);
     EXPECT_EQ(tus->getGamma(), 1.0f);
     EXPECT_EQ(tus->isHardwareGammaEnabled(), false);
 }

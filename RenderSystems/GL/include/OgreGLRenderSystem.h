@@ -85,17 +85,10 @@ namespace Ogre {
         GLint getTextureAddressingMode(TextureAddressingMode tam) const;
                 void initialiseContext(RenderWindow* primary);
 
-        /// Store last colour write state
-        bool mColourWrite[4];
         /// Store last stencil mask state
         uint32 mStencilWriteMask;
         /// Store last depth write state
         bool mDepthWrite;
-        /// Store last scissor enable state
-        bool mScissorsEnabled;
-
-        /// Store scissor box
-        int mScissorBox[4];
 
         GLint convertCompareFunction(CompareFunction func) const;
         GLint convertStencilOp(StencilOperation op, bool invert = false) const;
@@ -228,13 +221,9 @@ namespace Ogre {
 
         void _setTextureMatrix(size_t stage, const Matrix4& xform);
 
-        void _setSeparateSceneBlending(SceneBlendFactor sourceFactor, SceneBlendFactor destFactor, SceneBlendFactor sourceFactorAlpha, SceneBlendFactor destFactorAlpha, SceneBlendOperation op, SceneBlendOperation alphaOp );
-
         void _setAlphaRejectSettings(CompareFunction func, unsigned char value, bool alphaToCoverage);
 
         void _setViewport(Viewport *vp);
-
-        void _beginFrame(void);
 
         void _endFrame(void);
 
@@ -250,7 +239,7 @@ namespace Ogre {
 
         void _setDepthBias(float constantBias, float slopeScaleBias);
 
-        void _setColourBufferWriteEnabled(bool red, bool green, bool blue, bool alpha);
+        void setColourBlendState(const ColourBlendState& state);
 
         void _setFog(FogMode mode);
 
@@ -283,7 +272,7 @@ namespace Ogre {
         void bindGpuProgramParameters(GpuProgramType gptype, 
                                       const GpuProgramParametersPtr& params, uint16 variabilityMask);
 
-        void setScissorTest(bool enabled, size_t left = 0, size_t top = 0, size_t right = 800, size_t bottom = 600) ;
+        void setScissorTest(bool enabled, const Rect& rect = Rect()) ;
         void clearFrameBuffer(unsigned int buffers, 
                               const ColourValue& colour = ColourValue::Black, 
                               Real depth = 1.0f, unsigned short stencil = 0);

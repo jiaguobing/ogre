@@ -58,7 +58,7 @@ if (APPLE AND NOT ANDROID)
   add_definitions(-D__ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES=0)
 endif ()
 
-project(OGRE VERSION 1.12.6)
+project(OGRE VERSION 1.12.8)
 
 # extra version info
 set(OGRE_VERSION_SUFFIX "")
@@ -206,20 +206,8 @@ else()
   test_big_endian(OGRE_TEST_BIG_ENDIAN)
 endif()
 
-# Add OgreMain include path
-if (APPLE_IOS)
-  # Set static early for proper dependency detection
-  set(OGRE_STATIC TRUE)
-endif()
-
 # definitions for samples
 set(OGRE_LIBRARIES OgreMain)
-set(OGRE_MeshLodGenerator_LIBRARIES OgreMeshLodGenerator)
-set(OGRE_Paging_LIBRARIES OgrePaging)
-set(OGRE_Terrain_LIBRARIES OgreTerrain)
-set(OGRE_Volume_LIBRARIES OgreVolume)
-set(OGRE_Plugin_PCZSceneManager_LIBRARIES Plugin_PCZSceneManager)
-set(OGRE_Plugin_OctreeZone_LIBRARIES Plugin_OctreeZone)
 
 # Specify build paths
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
@@ -332,6 +320,7 @@ cmake_dependent_option(OGRE_BUILD_RENDERSYSTEM_D3D11 "Build Direct3D11 RenderSys
 cmake_dependent_option(OGRE_BUILD_RENDERSYSTEM_GL3PLUS "Build OpenGL 3+ RenderSystem" TRUE "OPENGL_FOUND;NOT WINDOWS_STORE;NOT WINDOWS_PHONE" FALSE)
 cmake_dependent_option(OGRE_BUILD_RENDERSYSTEM_GL "Build OpenGL RenderSystem" TRUE "OPENGL_FOUND;NOT APPLE_IOS;NOT WINDOWS_STORE;NOT WINDOWS_PHONE" FALSE)
 cmake_dependent_option(OGRE_BUILD_RENDERSYSTEM_GLES2 "Build OpenGL ES 2.x RenderSystem" FALSE "OPENGLES2_FOUND;NOT WINDOWS_STORE;NOT WINDOWS_PHONE" FALSE)
+cmake_dependent_option(OGRE_BUILD_RENDERSYSTEM_METAL "Build Metal RenderSystem" FALSE "APPLE" FALSE)
 option(OGRE_BUILD_PLUGIN_BSP "Build BSP SceneManager plugin" TRUE)
 option(OGRE_BUILD_PLUGIN_OCTREE "Build Octree SceneManager plugin" TRUE)
 option(OGRE_BUILD_PLUGIN_PFX "Build ParticleFX plugin" TRUE)
@@ -353,10 +342,8 @@ endif()
 option(OGRE_BUILD_COMPONENT_HLMS "Build HLMS component" FALSE)
 cmake_dependent_option(OGRE_BUILD_COMPONENT_BITES "Build OgreBites component" TRUE "OGRE_BUILD_COMPONENT_OVERLAY" FALSE)
 cmake_dependent_option(OGRE_BUILD_COMPONENT_PYTHON "Build Python bindings" TRUE "NOT OGRE_STATIC" FALSE)
-if (NOT EMSCRIPTEN)
-  option(OGRE_BUILD_COMPONENT_JAVA "Build Java (JNI) bindings" TRUE)
-endif()
-cmake_dependent_option(OGRE_BUILD_COMPONENT_CSHARP "Build Csharp bindings" TRUE "NOT ANDROID" FALSE)
+cmake_dependent_option(OGRE_BUILD_COMPONENT_JAVA "Build Java (JNI) bindings" TRUE "NOT OGRE_STATIC OR ANDROID" FALSE)
+cmake_dependent_option(OGRE_BUILD_COMPONENT_CSHARP "Build Csharp bindings" TRUE "NOT OGRE_STATIC" FALSE)
 option(OGRE_BUILD_COMPONENT_RTSHADERSYSTEM "Build RTShader System component" TRUE)
 cmake_dependent_option(OGRE_BUILD_RTSHADERSYSTEM_SHADERS "Build RTShader System FFP shaders" TRUE "OGRE_BUILD_COMPONENT_RTSHADERSYSTEM" FALSE)
 
@@ -422,9 +409,9 @@ endif ()
 # determine threading options
 include(PrepareThreadingOptions)
 
-# For Visual studio enable project folders by default.
+# Enable project folders by default if the IDE supportes them
 # Hide option from other compilers.
-if (MSVC)
+if (MSVC OR CMAKE_GENERATOR MATCHES Xcode)
 	option(OGRE_PROJECT_FOLDERS "Organize project into project folders." TRUE)
 endif ()
 

@@ -57,24 +57,7 @@
 #   endif
 #endif
 
-#if OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
-#   ifdef __OBJC__
-#       import <UIKit/UIKit.h>
-#   endif
-
-namespace OgreBites
-{
-    class SampleBrowser;
-}
-
-@interface SampleBrowserGestureView : UIView
-{
-    OgreBites::SampleBrowser *mBrowser;
-}
-@property (assign) OgreBites::SampleBrowser *mBrowser;
-
-                   @end
-#endif
+#define CAROUSEL_REDRAW_EPS 0.001
 
 namespace OgreBites
 {
@@ -154,9 +137,7 @@ namespace OgreBites
 
                 try
                 {
-#ifdef OGRE_BUILD_COMPONENT_RTSHADERSYSTEM
-                    s->setShaderGenerator(mShaderGenerator);
-#endif
+                    s->_setupTrays(mWindow);
                     SampleContext::runSample(s);
                 }
                 catch (Ogre::Exception& e)   // if failed to start, show error and fall back to menu
@@ -200,13 +181,15 @@ namespace OgreBites
             if (!mLoadedSamples.empty() && mTitleLabel->getTrayLocation() != TL_NONE && (!mCurrentSample || mSamplePaused))
             {
                 // makes the carousel spin smoothly toward its right position
-                Ogre::Real carouselOffset = mSampleMenu->getSelectionIndex() - mCarouselPlace;
-                if ((carouselOffset <= 0.001) && (carouselOffset >= -0.001)) mCarouselPlace = mSampleMenu->getSelectionIndex();
-                else mCarouselPlace += carouselOffset * Ogre::Math::Clamp<Ogre::Real>(evt.timeSinceLastFrame * 15.0, -1.0, 1.0);
+                float carouselOffset = mSampleMenu->getSelectionIndex() - mCarouselPlace;
+                if (std::abs(carouselOffset) <= CAROUSEL_REDRAW_EPS) mCarouselPlace = mSampleMenu->getSelectionIndex();
+                else mCarouselPlace += carouselOffset * Ogre::Math::Clamp<float>(evt.timeSinceLastFrame * 15.0, -1.0, 1.0);
 
                 // update the thumbnail positions based on carousel state
                 for (int i = 0; i < (int)mThumbs.size(); i++)
                 {
+                    if(carouselOffset == 0) break;
+
                     Ogre::Real thumbOffset = mCarouselPlace - i;
                     Ogre::Real phase = (thumbOffset / 2.0) - 2.8;
 
@@ -222,7 +205,7 @@ namespace OgreBites
                     Ogre::Real scale = 1.0 / Ogre::Math::Pow((Ogre::Math::Abs(thumbOffset) + 1.0), 0.75);
 
                     Ogre::BorderPanelOverlayElement* frame =
-                        (Ogre::BorderPanelOverlayElement*)mThumbs[i]->getChildIterator().getNext();
+                        (Ogre::BorderPanelOverlayElement*)mThumbs[i]->getChildren().begin()->second;
 
                     mThumbs[i]->setDimensions(128.0 * scale, 96.0 * scale);
                     frame->setDimensions(mThumbs[i]->getWidth() + 16.0, mThumbs[i]->getHeight() + 16.0);
@@ -361,6 +344,7 @@ namespace OgreBites
                 mTrayMgr->moveWidgetToTray("Quit", TL_RIGHT);
 #endif
 
+                mCarouselPlace += CAROUSEL_REDRAW_EPS;  // force redraw
                 windowResized(mWindow);
             }
             else if (b->getName() == "Apply")   // apply any changes made in the configuration screen
@@ -435,10 +419,7 @@ namespace OgreBites
                         Ogre::MaterialPtr newMat = templateMat->clone(name);
 
                         Ogre::TextureUnitState* tus = newMat->getTechnique(0)->getPass(0)->getTextureUnitState(0);
-                        if (Ogre::ResourceGroupManager::getSingleton().resourceExists("Essential", info["Thumbnail"]))
-                            tus->setTextureName(info["Thumbnail"]);
-                        else
-                            tus->setTextureName("thumb_error.png");
+                        tus->setTextureName(info["Thumbnail"]);
 
                         // create sample thumbnail overlay
                         Ogre::BorderPanelOverlayElement* bp = (Ogre::BorderPanelOverlayElement*)
@@ -455,7 +436,7 @@ namespace OgreBites
                     }
                 }
 
-                mCarouselPlace = 0;  // reset carousel
+                mCarouselPlace = CAROUSEL_REDRAW_EPS;  // reset carousel
 
                 mSampleMenu->setItems(sampleTitles);
                 if (mSampleMenu->getNumItems() != 0) itemSelected(mSampleMenu);
@@ -932,15 +913,6 @@ namespace OgreBites
                 for (SampleSet::iterator j = newSamples.begin(); j != newSamples.end(); j++)
                 {
                     Ogre::NameValuePairList& info = (*j)->getInfo();   // acquire custom sample info
-                    Ogre::NameValuePairList::iterator k;
-
-                    // give sample default title and category if none found
-                    k= info.find("Title");
-                    if (k == info.end() || k->second.empty()) info["Title"] = "Untitled";
-                    k = info.find("Category");
-                    if (k == info.end() || k->second.empty()) info["Category"] = "Unsorted";
-                    k = info.find("Thumbnail");
-                    if (k == info.end() || k->second.empty()) info["Thumbnail"] = "thumb_error.png";
 
                     mLoadedSamples.insert(*j);                    // add sample only after ensuring title for sorting
                     mSampleCategories.insert(info["Category"]);   // add sample category
@@ -1067,6 +1039,8 @@ namespace OgreBites
                 mCategoryMenu->selectItem(0);
             else
                 itemSelected(mCategoryMenu);   // if there are no items, we can't select one, so manually invoke callback
+
+            mCarouselPlace = CAROUSEL_REDRAW_EPS; // force redraw
         }
 
         /*-----------------------------------------------------------------------------
@@ -1192,18 +1166,6 @@ namespace OgreBites
             mHiddenOverlays.clear();
         }
 
-        /*-----------------------------------------------------------------------------
-        | Get the name of the RTSS shader cache file
-          -----------------------------------------------------------------------------*/
-        virtual Ogre::String getShaderCacheFileName()
-        {
-#if OGRE_DEBUG_MODE
-            return "cache_d.bin";
-#else
-            return "cache.bin";
-#endif
-        }
-
         TrayManager* mTrayMgr;                      // SDK tray interface
         Ogre::StringVector mLoadedSamplePlugins;       // loaded sample plugins
         std::set<Ogre::String> mSampleCategories;      // sample categories
@@ -1229,50 +1191,5 @@ namespace OgreBites
         bool mGrabInput;
     };
 }
-
-#if OGRE_PLATFORM == OGRE_PLATFORM_APPLE_IOS
-
-@implementation SampleBrowserGestureView
-
-@synthesize mBrowser;
-
-- (BOOL)canBecomeFirstResponder
-{
-    return YES;
-}
-
-- (void)dealloc {
-    [super dealloc];
-}
-
-- (void)motionBegan:(UIEventSubtype)motion withEvent:(UIEvent *)event {
-    if(mBrowser && event.type == UIEventTypeMotion && event.subtype == UIEventSubtypeMotionShake)
-        mBrowser->motionBegan();
-
-    if ([super respondsToSelector:@selector(motionBegan:withEvent:)]) {
-        [super motionBegan:motion withEvent:event];
-    }
-}
-
-- (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
-    if(mBrowser && event.type == UIEventTypeMotion && event.subtype == UIEventSubtypeMotionShake)
-        mBrowser->motionEnded();
-
-    if ([super respondsToSelector:@selector(motionEnded:withEvent:)]) {
-        [super motionEnded:motion withEvent:event];
-    }
-}
-
-- (void)motionCancelled:(UIEventSubtype)motion withEvent:(UIEvent *)event {
-    if(mBrowser && event.type == UIEventTypeMotion && event.subtype == UIEventSubtypeMotionShake)
-        mBrowser->motionCancelled();
-
-    if ([super respondsToSelector:@selector(motionCancelled:withEvent:)]) {
-        [super motionCancelled:motion withEvent:event];
-    }
-}
-@end
-
-#endif
 
 #endif

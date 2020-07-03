@@ -128,19 +128,19 @@ if(OGRE_BUILD_DEPENDENCIES AND NOT EXISTS ${OGREDEPS_PATH})
 
     message(STATUS "Building ZZIPlib")
     file(DOWNLOAD
-        https://github.com/gdraheim/zziplib/archive/develop.zip
-        ${PROJECT_BINARY_DIR}/zziplib-develop.tar.gz)
+        https://github.com/gdraheim/zziplib/archive/v0.13.71.tar.gz
+        ${PROJECT_BINARY_DIR}/zziplib-0.13.71.tar.gz)
     execute_process(COMMAND ${CMAKE_COMMAND}
-        -E tar xf zziplib-develop.tar.gz WORKING_DIRECTORY ${PROJECT_BINARY_DIR})
+        -E tar xf zziplib-0.13.71.tar.gz WORKING_DIRECTORY ${PROJECT_BINARY_DIR})
     execute_process(COMMAND ${BUILD_COMMAND_COMMON}
         -DZLIB_ROOT=${OGREDEPS_PATH}
         -DZZIPMMAPPED=OFF -DZZIPCOMPAT=OFF -DZZIPLIBTOOL=OFF -DZZIPFSEEKO=OFF -DZZIPWRAP=OFF -DZZIPSDL=OFF -DZZIPBINS=OFF -DZZIPTEST=OFF -DZZIPDOCS=OFF -DBASH=sh
         -DBUILD_STATIC_LIBS=TRUE
         -DBUILD_SHARED_LIBS=${OGREDEPS_SHARED}
-        ${PROJECT_BINARY_DIR}/zziplib-develop
-        WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/zziplib-develop)
+        ${PROJECT_BINARY_DIR}/zziplib-0.13.71
+        WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/zziplib-0.13.71)
     execute_process(COMMAND ${CMAKE_COMMAND} 
-        --build ${PROJECT_BINARY_DIR}/zziplib-develop ${BUILD_COMMAND_OPTS})
+        --build ${PROJECT_BINARY_DIR}/zziplib-0.13.71 ${BUILD_COMMAND_OPTS})
 
     message(STATUS "Building pugixml")
     file(DOWNLOAD
@@ -280,6 +280,10 @@ find_package(PythonInterp)
 find_package(PythonLibs)
 macro_log_feature(PYTHONLIBS_FOUND "Python" "Language bindings to use OGRE from Python" "http://www.python.org/" FALSE "" "")
 
+# SWIG
+find_package(SWIG 3.0.8 QUIET)
+macro_log_feature(SWIG_FOUND "SWIG" "Language bindings (Python, Java, C#) for OGRE" "http://www.swig.org/" FALSE "" "")
+
 #######################################################################
 # Samples dependencies
 #######################################################################
@@ -287,19 +291,25 @@ macro_log_feature(PYTHONLIBS_FOUND "Python" "Language bindings to use OGRE from 
 # Find sdl2
 if(NOT ANDROID AND NOT EMSCRIPTEN)
   # find script does not work in cross compilation environment
-  find_package(SDL2)
+  find_package(SDL2 QUIET)
   macro_log_feature(SDL2_FOUND "SDL2" "Simple DirectMedia Library needed for input handling in samples" "https://www.libsdl.org/" FALSE "" "")
-  if(SDL2_FOUND AND WIN32 AND NOT SDL2_BINARY)
-    # fix linking static SDL2 on windows
-    set(SDL2_LIBRARY ${SDL2_LIBRARY} winmm.lib imm32.lib version.lib)
+  if(SDL2_FOUND AND NOT TARGET SDL2::SDL2)
+    add_library(SDL2::SDL2 INTERFACE IMPORTED)
+    set_target_properties(SDL2::SDL2 PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${SDL2_LIBRARIES}"
+    )
   endif()
+
+  find_package(Qt5 COMPONENTS Core Gui QUIET)
+  macro_log_feature(Qt5_FOUND "Qt" "optional integration with the Qt Library for window creation and input" "http://www.qt.io/" FALSE "" "")
 endif()
 
 #######################################################################
 # Tools
 #######################################################################
 
-find_package(Doxygen)
+find_package(Doxygen QUIET)
 macro_log_feature(DOXYGEN_FOUND "Doxygen" "Tool for building API documentation" "http://doxygen.org" FALSE "" "")
 
 # Find Softimage SDK

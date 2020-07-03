@@ -105,7 +105,9 @@ namespace Ogre {
             tex->setNumMipmaps((numMipmaps == MIP_DEFAULT)? mDefaultNumMipmaps :
                 static_cast<uint32>(numMipmaps));
             tex->setGamma(gamma);
+            OGRE_IGNORE_DEPRECATED_BEGIN
             tex->setTreatLuminanceAsAlpha(isAlpha);
+            OGRE_IGNORE_DEPRECATED_END
             tex->setFormat(desiredFormat);
             tex->setHardwareGammaEnabled(hwGamma);
         }
@@ -123,17 +125,25 @@ namespace Ogre {
         return tex;
     }
     //-----------------------------------------------------------------------
-    TexturePtr TextureManager::load(const String &name, const String& group, TextureType texType,
+    TexturePtr TextureManager::load(const String& name, const String& group, TextureType texType,
                                     int numMipmaps, Real gamma, bool isAlpha, PixelFormat desiredFormat,
                                     bool hwGamma)
     {
-        ResourceCreateOrRetrieveResult res =
-            createOrRetrieve(name,group,false,0,0,texType,numMipmaps,gamma,isAlpha,desiredFormat,hwGamma);
+        auto res = createOrRetrieve(name, group, false, 0, 0, texType, numMipmaps, gamma, isAlpha,
+                                    desiredFormat, hwGamma);
         TexturePtr tex = static_pointer_cast<Texture>(res.first);
         tex->load();
         return tex;
     }
-
+    TexturePtr TextureManager::load(const String& name, const String& group, TextureType texType,
+                                    int numMipmaps, Real gamma, PixelFormat desiredFormat, bool hwGamma)
+    {
+        auto res = createOrRetrieve(name, group, false, 0, 0, texType, numMipmaps, gamma, false,
+                                    desiredFormat, hwGamma);
+        TexturePtr tex = static_pointer_cast<Texture>(res.first);
+        tex->load();
+        return tex;
+    }
     //-----------------------------------------------------------------------
     TexturePtr TextureManager::loadImage( const String &name, const String& group,
         const Image &img, TextureType texType, int numMipmaps, Real gamma, bool isAlpha, 
@@ -145,7 +155,9 @@ namespace Ogre {
         tex->setNumMipmaps((numMipmaps == MIP_DEFAULT)? mDefaultNumMipmaps :
             static_cast<uint32>(numMipmaps));
         tex->setGamma(gamma);
+        OGRE_IGNORE_DEPRECATED_BEGIN
         tex->setTreatLuminanceAsAlpha(isAlpha);
+        OGRE_IGNORE_DEPRECATED_END
         tex->setFormat(desiredFormat);
         tex->setHardwareGammaEnabled(hwGamma);
         tex->loadImage(img);
@@ -179,11 +191,10 @@ namespace Ogre {
 
         OgreAssert(width && height && depth, "total size of texture must not be zero");
 
-        // Check for 3D texture support
-        const RenderSystemCapabilities* caps =
-            Root::getSingleton().getRenderSystem()->getCapabilities();
-        if (((texType == TEX_TYPE_3D) || (texType == TEX_TYPE_2D_ARRAY)) &&
-            !caps->hasCapability(RSC_TEXTURE_3D))
+        // Check for texture support
+        const auto caps = Root::getSingleton().getRenderSystem()->getCapabilities();
+        if (((texType == TEX_TYPE_3D) && !caps->hasCapability(RSC_TEXTURE_3D)) ||
+            ((texType == TEX_TYPE_2D_ARRAY) && !caps->hasCapability(RSC_TEXTURE_2D_ARRAY)))
             return ret;
 
         if (((usage & (int)TU_STATIC) != 0) && (!Root::getSingleton().getRenderSystem()->isStaticBufferLockable()))

@@ -1218,6 +1218,7 @@ namespace Ogre{
             }
         }
 
+        OGRE_IGNORE_DEPRECATED_BEGIN
         // Apply the texture aliases
         if(compiler->getListener())
         {
@@ -1226,6 +1227,7 @@ namespace Ogre{
         }
         mMaterial->applyTextureAliases(mTextureAliases);
         mTextureAliases.clear();
+        OGRE_IGNORE_DEPRECATED_END
     }
 
     /**************************************************************************
@@ -2661,8 +2663,10 @@ namespace Ogre{
                 case ID_TEXTURE_ALIAS:
                     compiler->addError(ScriptCompiler::CE_DEPRECATEDSYMBOL, prop->file, prop->line,
                         "texture_alias. Use 'texture $variable'");
+                    OGRE_IGNORE_DEPRECATED_BEGIN
                     if(getValue(prop, compiler, sval))
                         mUnit->setTextureNameAlias(sval);
+                    OGRE_IGNORE_DEPRECATED_END
                     break;
                 case ID_TEXTURE:
                     if(prop->values.empty())
@@ -2719,10 +2723,14 @@ namespace Ogre{
                                         sRGBRead = true;
                                         break;
                                     default:
-                                        if(StringConverter::isNumber(atom->value))
-                                            mipmaps = StringConverter::parseInt(atom->value);
-                                        else
+                                        if(!StringConverter::parse(atom->value, mipmaps))
+                                        {
                                             format = PixelUtil::getFormatFromName(atom->value, true);
+
+                                            if (format == PF_UNKNOWN)
+                                                compiler->addError(ScriptCompiler::CE_INVALIDPARAMETERS,
+                                                                   prop->file, prop->line, atom->value);
+                                        }
                                     }
                                 }
                                 else
@@ -2736,9 +2744,18 @@ namespace Ogre{
                             ProcessResourceNameScriptCompilerEvent evt(ProcessResourceNameScriptCompilerEvent::TEXTURE, val);
                             compiler->_fireEvent(&evt, 0);
 
+                            if(isAlpha)
+                            {
+                                // format = PF_A8; should only be done, if src is luminance, which we dont know here
+                                compiler->addError(ScriptCompiler::CE_DEPRECATEDSYMBOL, prop->file,
+                                                   prop->line, "alpha. Use PF_A8 instead");
+                            }
+
                             mUnit->setTextureName(evt.mName, texType);
                             mUnit->setDesiredFormat(format);
+                            OGRE_IGNORE_DEPRECATED_BEGIN
                             mUnit->setIsAlpha(isAlpha);
+                            OGRE_IGNORE_DEPRECATED_END
                             mUnit->setNumMipmaps(mipmaps);
                             mUnit->setHardwareGammaEnabled(sRGBRead);
                         }
@@ -3618,8 +3635,10 @@ namespace Ogre{
         bool isHighLevel = language != "asm";
         CreateGpuProgramScriptCompilerEvent evt(obj->file, obj->name, compiler->getResourceGroup(), source, syntax,
                                                 gpt);
+        OGRE_IGNORE_DEPRECATED_BEGIN
         CreateHighLevelGpuProgramScriptCompilerEvent evtHL(obj->file, obj->name, compiler->getResourceGroup(), source,
                                                          language, gpt);
+        OGRE_IGNORE_DEPRECATED_END
         bool processed = compiler->_fireEvent(isHighLevel ? &evt : &evtHL, &prog);
         if(!processed)
         {

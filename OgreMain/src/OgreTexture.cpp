@@ -115,8 +115,8 @@ namespace Ogre {
         mLoadingState.store(LOADSTATE_LOADED);
 
         // Notify manager
-        if(mCreator)
-            mCreator->_notifyResourceLoaded(this);
+        if(getCreator())
+            getCreator()->_notifyResourceLoaded(this);
 
         // No deferred loading events since this method is not called in background
 
@@ -127,7 +127,6 @@ namespace Ogre {
     {
         mFormat = pf;
         mDesiredFormat = pf;
-        mSrcFormat = pf;
     }
     //--------------------------------------------------------------------------
     bool Texture::hasAlpha(void) const
@@ -191,16 +190,13 @@ namespace Ogre {
         mSrcWidth = mWidth = images[0]->getWidth();
         mSrcHeight = mHeight = images[0]->getHeight();
         mSrcDepth = mDepth = images[0]->getDepth();
+        mSrcFormat = images[0]->getFormat();
 
         if(!mLayerNames.empty() && mTextureType != TEX_TYPE_CUBE_MAP)
             mDepth = mLayerNames.size();
 
-        // Get source image format and adjust if required
-        mSrcFormat = images[0]->getFormat();
-        if (mTreatLuminanceAsAlpha && mSrcFormat == PF_L8)
-        {
-            mSrcFormat = PF_A8;
-        }
+        if(mTreatLuminanceAsAlpha && mSrcFormat == PF_L8)
+            mDesiredFormat = PF_A8;
 
         if (mDesiredFormat != PF_UNKNOWN)
         {
@@ -306,9 +302,10 @@ namespace Ogre {
                     // Load from faces of images[0]
                     src = images[0]->getPixelBox(i, mip);
                 }
-    
-                // Sets to treated format in case is difference
-                src.format = mSrcFormat;
+
+                // Allow reinterpreting luminance as alpha
+                if (mDesiredFormat == PF_A8 && (src.format == PF_L8 || src.format == PF_R8))
+                    src.format = PF_A8;
 
                 if(mGamma != 1.0f) {
                     // Apply gamma correction
